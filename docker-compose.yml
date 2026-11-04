@@ -1,0 +1,130 @@
+# docker-compose.yml (Root Workspace)
+# Menjalankan seluruh sistem SIPMAS (Frontend, Backend, NLP Service, MySQL, MailHog)
+services:
+  # 1. Database MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: sipmas-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: db_sipmas
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - sipmas-net
+
+  # 2. Local MailHog for testing OTP email notifications
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: sipmas-mailhog
+    restart: unless-stopped
+    ports:
+      - "${MAILHOG_SMTP_PORT:-1026}:1025" # SMTP server (1026 pada host mencegah konflik dengan Mailpit/Laragon)
+      - "127.0.0.1:${MAILHOG_WEB_PORT:-8026}:8025" # Web UI untuk melihat email OTP masuk di browser (http://localhost:8026)
+    networks:
+      - sipmas-net
+
+  # 3. NLP Microservice (Python Flask + SVM + Gunicorn)
+  nlp-service:
+    build:
+      context: ./apps/nlp-service
+      dockerfile: Dockerfile
+    container_name: sipmas-nlp
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+    ports:
+      - "127.0.0.1:5000:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - sipmas-net
+
+  # 4. Backend Express API
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: sipmas-backend
+    restart: unless-stopped
+    environment:
+      PORT: 5001
+      DATABASE_URL: "mysql://root:@mysql:3306/db_sipmas"
+      NLP_SERVICE_URL: "http://nlp-service:5000"
+      SMTP_HOST: "${SMTP_HOST:-mailhog}"
+      SMTP_PORT: "${SMTP_PORT:-1025}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET wajib diisi}"
+      FRONTEND_URL: "http://localhost:3000"
+    command: sh -c "npx prisma migrate deploy && node dist/server.js"
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./apps/backend/public/uploads:/app/public/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nlp-service:
+        condition: service_started
+      mailhog:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - sipmas-net
+
+  # 5. Frontend Next.js Web UI
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ""
+        INTERNAL_API_URL: "http://backend:5001"
+    container_name: sipmas-frontend
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: ""
+      INTERNAL_API_URL: "http://backend:5001"
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - sipmas-net
+
+volumes:
+  mysql_data:
+    name: sipmas-mysql-data
+
+networks:
+  sipmas-net:
+    name: sipmas-network
+    driver: bridge

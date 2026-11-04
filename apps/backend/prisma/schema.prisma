@@ -1,0 +1,61 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int       @id @default(autoincrement())
+  nik        String    @unique
+  nama       String
+  email      String    @unique
+  password   String
+  role       Role      @default(WARGA)
+  isVerified Boolean   @default(false) // <-- Tambahan untuk status verifikasi OTP
+  otpCode    String?   
+  otpExpires DateTime? 
+  otpAttempts Int      @default(0)
+  tokenVersion Int     @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  laporan    Laporan[]
+}
+
+model Laporan {
+  id               Int       @id @default(autoincrement())
+  judul            String
+  isi              String    @db.Text
+  kategori         String?
+  lokasi           String?
+  tanggalKejadian  DateTime?
+  kategoriPrediksi String?
+  confidenceScore  Float?
+  foto             String?  
+  status           Status    @default(PENDING)
+  catatanSelesai   String?   @db.Text
+  fotoSelesai      String?
+  selesaiAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
+  userId           Int
+  user             User      @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([kategori])
+  @@index([userId, createdAt])
+}
+
+enum Role {
+  WARGA
+  ADMIN
+}
+
+enum Status {
+  PENDING
+  PROSES
+  SELESAI
+}

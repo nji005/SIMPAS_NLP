@@ -1,0 +1,68 @@
+{
+  "trained_at": "2026-10-15T12:45:18.000472+00:00",
+  "model_type": "LogisticRegression",
+  "n_samples": 478,
+  "classes": [
+    "infrastruktur",
+    "lingkungan",
+    "pelayanan"
+  ],
+  "cross_validation": {
+    "n_splits": 5,
+    "mean_accuracy": 0.9333,
+    "std_accuracy": 0.0816,
+    "mean_macro_f1": 0.9331,
+    "std_macro_f1": 0.082,
+    "fold_accuracies": [
+      0.8333,
+      0.8333,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "fold_macro_f1s": [
+      0.832,
+      0.8333,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "class_metrics": {
+    "infrastruktur": {
+      "precision": 0.9041916167664671,
+      "recall": 0.949685534591195,
+      "f1_score": 0.9263803680981595,
+      "support": 159
+    },
+    "lingkungan": {
+      "precision": 0.89937106918239,
+      "recall": 0.89937106918239,
+      "f1_score": 0.89937106918239,
+      "support": 159
+    },
+    "pelayanan": {
+      "precision": 1.0,
+      "recall": 0.95,
+      "f1_score": 0.9743589743589743,
+      "support": 160
+    }
+  },
+  "confusion_matrix": [
+    [
+      151,
+      8,
+      0
+    ],
+    [
+      16,
+      143,
+      0
+    ],
+    [
+      0,
+      8,
+      152
+    ]
+  ]
+}

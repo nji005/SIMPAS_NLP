@@ -1,0 +1,9 @@
+# Temuan Gitleaks yang sudah ditinjau: bukan rahasia asli.
+# Format: <commit>:<berkas>:<RuleID>:<baris>
+
+# Konstanta TEST_SECRET (8 karakter) di berkas test untuk menandatangani
+# JWT/HMAC tiruan. Nilai bukan JWT_SECRET asli. Di HEAD sudah diganti
+# placeholder; entri ini hanya menutup temuan di riwayat commit lama.
+a67982b5625a774e41c664436af8a55a98f5a674:apps/backend/src/__tests__/authGuard.test.ts:generic-api-key:16
+a67982b5625a774e41c664436af8a55a98f5a674:apps/backend/src/__tests__/otp.test.ts:generic-api-key:4
+29b8f7a9e15c8e117d27f32eeaf5915e5dbd9f1c:apps/backend/src/__tests__/riwayatDetail.test.ts:generic-api-key:19

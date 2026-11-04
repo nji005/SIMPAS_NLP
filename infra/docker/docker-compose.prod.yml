@@ -1,0 +1,107 @@
+# infra/docker/docker-compose.prod.yml
+# Production Docker Compose stack with volume persistence and hardened settings
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: sipmas-prod-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD wajib diisi}"
+      MYSQL_DATABASE: db_sipmas
+      MYSQL_USER: sipmas_app
+      MYSQL_PASSWORD: "${DB_APP_PASSWORD:?DB_APP_PASSWORD wajib diisi}"
+    volumes:
+      - prod_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sipmas-prod-net
+
+  nlp-service:
+    build:
+      context: ../../apps/nlp-service
+      dockerfile: Dockerfile
+    container_name: sipmas-prod-nlp
+    restart: always
+    environment:
+      PORT: 5000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - sipmas-prod-net
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    container_name: sipmas-prod-backend
+    restart: always
+    environment:
+      PORT: 5001
+      DATABASE_URL: "mysql://sipmas_app:${DB_APP_PASSWORD:?DB_APP_PASSWORD wajib diisi}@mysql:3306/db_sipmas"
+      NLP_SERVICE_URL: "http://nlp-service:5000"
+      SMTP_HOST: "${SMTP_HOST:?SMTP_HOST wajib diisi}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET wajib diisi}"
+      FRONTEND_URL: "${FRONTEND_URL:-http://localhost:3000}"
+      TRUST_PROXY: "${TRUST_PROXY:-1}"
+    command: sh -c "npx prisma migrate deploy && node dist/server.js"
+    ports:
+      - "5001:5001"
+    volumes:
+      - prod_backend_uploads:/app/public/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nlp-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - sipmas-prod-net
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ""
+        INTERNAL_API_URL: "http://backend:5001"
+    container_name: sipmas-prod-frontend
+    restart: always
+    environment:
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: ""
+      INTERNAL_API_URL: "http://backend:5001"
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - sipmas-prod-net
+
+volumes:
+  prod_mysql_data:
+  prod_backend_uploads:
+
+networks:
+  sipmas-prod-net:
+    driver: bridge

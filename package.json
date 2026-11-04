@@ -1,0 +1,14 @@
+{
+  "name": "pengaduan-masyarakat-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.4"
+  },
+  "packageManager": "pnpm@12.3.4"
+}
