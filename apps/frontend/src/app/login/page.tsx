@@ -5,6 +5,7 @@ import { Eye, Loader2, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { API_BASE_URL } from "@/lib/api-client";
+import OtpInput from "@/components/OtpInput";
 
 export default function AuthPage() {
   const [activeTab, setActiveTab] = useState("masuk");
@@ -77,6 +78,7 @@ export default function AuthPage() {
   // --- TAHAP 2 DAFTAR: VERIFIKASI OTP ---
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (otpCode.length !== 6) return;
     setIsLoading(true); setMessage({ type: "", text: "" });
 
     try {
@@ -96,6 +98,7 @@ export default function AuthPage() {
         }, 2000);
       } else {
         setMessage({ type: "error", text: data.message || "OTP tidak valid." });
+        setOtpCode("");
       }
     } catch (error) {
       setMessage({ type: "error", text: "Terjadi kesalahan jaringan." });
@@ -190,8 +193,8 @@ export default function AuthPage() {
                     <h1 className="text-2xl font-bold text-gray-900">Verifikasi Email</h1>
                     <p className="text-sm text-gray-500 mt-2">Kode OTP 6 digit telah dikirim ke <br /><b>{formData.email}</b></p>
                   </div>
-                  <input type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} required maxLength={6} placeholder="Masukkan 6 Digit OTP" className="w-full bg-[#f4f4f5] px-4 py-3.5 text-sm outline-none rounded-sm text-center font-mono text-xl tracking-[0.5em] text-black" />
-                  <button type="submit" disabled={isLoading} className="w-full bg-black text-white py-4 rounded-md mt-2 hover:bg-gray-800 transition-colors flex justify-center items-center gap-2">
+                  <OtpInput value={otpCode} onChange={setOtpCode} autoFocus disabled={isLoading} />
+                  <button type="submit" disabled={isLoading || otpCode.length !== 6} className="w-full bg-black text-white py-4 rounded-md mt-2 hover:bg-gray-800 transition-colors flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                     {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "VERIFIKASI & SELESAI"}
                   </button>
                   <button type="button" onClick={() => setRegStep(1)} className="text-xs text-gray-500 hover:text-black text-center mt-2">Kembali ke formulir pendaftaran</button>

@@ -5,6 +5,7 @@ import { Eye, EyeOff, ArrowRight, Loader2, Mail, ShieldCheck } from "lucide-reac
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api-client";
+import OtpInput from "@/components/OtpInput";
 
 export default function LupaSandiPage() {
   const router = useRouter();
@@ -51,6 +52,7 @@ export default function LupaSandiPage() {
   // --- LANGKAH 2: VERIFIKASI OTP & RESET PASWORD ---
   const handleVerifyAndReset = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (otpCode.length !== 6) return;
     setIsLoading(true);
     setMessage({ type: "", text: "" });
 
@@ -69,6 +71,7 @@ export default function LupaSandiPage() {
         }, 2000);
       } else {
         setMessage({ type: "error", text: data.message || "Gagal memproses." });
+        setOtpCode("");
       }
     } catch (error) {
       setMessage({ type: "error", text: "Terjadi kesalahan jaringan." });
@@ -121,7 +124,7 @@ export default function LupaSandiPage() {
           <form onSubmit={handleVerifyAndReset} className="flex flex-col gap-5 animate-fade-in">
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] font-bold text-black uppercase tracking-wider">Masukkan Kode OTP (6 Digit)</label>
-              <input type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} required maxLength={6} placeholder="Contoh: 123456" className="w-full bg-[#f4f4f5] border border-transparent focus:border-black focus:bg-white px-4 py-3.5 text-sm outline-none rounded-sm text-center font-mono text-lg tracking-widest text-black" />
+              <OtpInput value={otpCode} onChange={setOtpCode} autoFocus disabled={isLoading} />
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -142,7 +145,7 @@ export default function LupaSandiPage() {
               </div>
             </div>
 
-            <button type="submit" disabled={isLoading} className="w-full bg-black text-white flex items-center justify-center gap-3 py-4 rounded-md mt-2 hover:bg-gray-800 transition-colors disabled:bg-gray-400">
+            <button type="submit" disabled={isLoading || otpCode.length !== 6} className="w-full bg-black text-white flex items-center justify-center gap-3 py-4 rounded-md mt-2 hover:bg-gray-800 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="text-[11px] font-bold uppercase tracking-widest">Verifikasi & Ubah Sandi</span>}
               {!isLoading && <ArrowRight className="w-4 h-4" />}
             </button>
