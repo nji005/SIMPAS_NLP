@@ -32,6 +32,7 @@ WORKDIR /app
 RUN apk add --no-cache openssl curl
 
 ENV NODE_ENV=production \
+    NODE_OPTIONS="--max-old-space-size=192" \
     PORT=5001
 
 # Copy deployed production files with ownership set to non-root node user
