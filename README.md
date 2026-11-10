@@ -94,12 +94,16 @@ Terdapat dua cara untuk menjalankan aplikasi:
 
 ### Cara 1: Menggunakan Docker Compose (Paling Praktis — 1 Perintah)
 
-Jika Anda memiliki **Docker Desktop**, seluruh sistem (Database MySQL, MailHog, NLP Service, Backend API, dan Frontend UI) dapat dijalankan sekaligus dengan satu perintah tanpa perlu menginstall Python atau MySQL lokal:
+Jika Anda memiliki **Docker Desktop**, seluruh sistem (Database MySQL, NLP Service, Backend API, dan Frontend UI) dapat dijalankan sekaligus dengan satu perintah tanpa perlu menginstall Python atau MySQL lokal:
 
 1. Pastikan Docker Desktop sudah aktif.
 2. Buka terminal di folder root project (`pengaduan_masyarakat`), lalu jalankan:
    ```bash
+   # Menjalankan layanan utama (tanpa MailHog):
    docker compose up -d
+
+   # Untuk pengembangan (menyertakan MailHog untuk pengujian email OTP lokal):
+   docker compose --profile dev up -d
    ```
 3. Tunggu hingga semua kontainer berstatus `healthy`. Migrasi skema database akan otomatis dijalankan oleh backend saat kontainer menyala!
 4. Untuk melihat status kontainer:
@@ -164,7 +168,7 @@ Jika ingin menjalankan secara lokal menggunakan Laragon/XAMPP:
 | **Dashboard Admin** | [http://localhost:3000/admin](http://localhost:3000/admin) | Manajemen aduan, role user, analitik laporan |
 | **Backend REST API & Monitoring** | [http://localhost:5001](http://localhost:5001) | REST API Express (`/health` publik; dashboard monitoring `/` dan status `/api/status` wajib login ADMIN) |
 | **NLP Service API** | [http://localhost:5000](http://localhost:5000) | Microservice klasifikasi teks (`/predict`, `/health`) |
-| **MailHog Web UI** *(Khusus Docker)* | [http://localhost:8026](http://localhost:8026) | Kotak masuk email OTP verifikasi akun |
+| **MailHog Web UI** *(Khusus Docker `--profile dev`)* | [http://localhost:8026](http://localhost:8026) | Kotak masuk email OTP verifikasi akun (dijalankan dengan `docker compose --profile dev up -d`) |
 
 ---
 
