@@ -62,4 +62,8 @@ apps/backend/public/uploads/*
 !apps/backend/public/uploads/.gitkeep
 *.zip
 
+# Load test output artifacts
+infra/loadtest/*.csv
+infra/loadtest/summary.json
+
 AGENTS.md
