@@ -50,6 +50,20 @@ const laporanCreatedCounter = new Counter('laporan_created_count');
 const STAGE_DURATION = __ENV.STAGE_DURATION || '2m';
 const RAMP_DOWN_DURATION = __ENV.RAMP_DOWN_DURATION || '30s';
 
+// Konversi string durasi (mis. "2m", "30s", "10s") ke milidetik
+function parseDurationMs(durStr) {
+  if (!durStr) return 120000;
+  const match = durStr.trim().match(/^([0-9.]+)\s*([a-zA-Z]+)$/);
+  if (!match) return 120000;
+  const val = parseFloat(match[1]);
+  const unit = match[2].toLowerCase();
+  if (unit === 'm' || unit === 'min') return val * 60 * 1000;
+  if (unit === 's' || unit === 'sec') return val * 1000;
+  return val;
+}
+
+const stageMs = parseDurationMs(STAGE_DURATION);
+
 export const options = {
   stages: [
     { target: 5, duration: STAGE_DURATION },     // Tahap 1: 5 VU (~2m)
@@ -69,6 +83,13 @@ export const options = {
   },
 };
 
+// Inisialisasi awal sekali (setup) untuk mencatat waktu mulai pengujian secara akurat
+export function setup() {
+  return {
+    startTime: Date.now(),
+  };
+}
+
 // Helper jeda acak 1 sampai 4 detik antar aksi pengguna
 function randomSleep(min = 1, max = 4) {
   sleep(min + Math.random() * (max - min));
@@ -76,10 +97,26 @@ function randomSleep(min = 1, max = 4) {
 
 // State sesi per virtual user (k6 mengeksekusi ini terisolasi per VU)
 let hasLoggedIn = false;
+let sessionCookie = '';
 let userEmail = '';
 let userIp = '';
 
-export default function () {
+export default function (setupData) {
+  // Hitung stage aktif berdasarkan waktu berjalan dari setup
+  const elapsedMs = setupData && setupData.startTime ? (Date.now() - setupData.startTime) : 0;
+  let stageName = 'stage_5';
+  if (elapsedMs < 1 * stageMs) {
+    stageName = 'stage_5';
+  } else if (elapsedMs < 2 * stageMs) {
+    stageName = 'stage_15';
+  } else if (elapsedMs < 3 * stageMs) {
+    stageName = 'stage_30';
+  } else if (elapsedMs < 4 * stageMs) {
+    stageName = 'stage_50';
+  } else {
+    stageName = 'ramp_down';
+  }
+
   // Mapping VU ke akun uji (1 s/d 60)
   const userIndex = ((__VU - 1) % 60) + 1;
   userEmail = `loadtest-${userIndex}@example.test`;
@@ -95,7 +132,7 @@ export default function () {
   // Pengguna asli login sekali saat memulai sesi browser, lalu
   // menggunakan cookie sesi httpOnly untuk seluruh aksi berikutnya.
   // -------------------------------------------------------------
-  if (!hasLoggedIn) {
+  if (!hasLoggedIn || !sessionCookie) {
     const loginPayload = JSON.stringify({
       email: userEmail,
       password: LOADTEST_PASSWORD,
@@ -103,19 +140,22 @@ export default function () {
 
     const loginRes = http.post(`${BASE_URL}/api/auth/login`, loginPayload, {
       headers: Object.assign({}, baseHeaders, { 'Content-Type': 'application/json' }),
-      tags: { action: 'login' },
+      tags: { action: 'login', stage: stageName },
     });
 
-    loginDuration.add(loginRes.timings.duration);
+    loginDuration.add(loginRes.timings.duration, { stage: stageName });
     const loginOk = check(loginRes, {
       'login status 200': (r) => r.status === 200,
     });
 
     if (loginOk) {
       hasLoggedIn = true;
+      const rawCookie = loginRes.headers['Set-Cookie'] || (loginRes.cookies && loginRes.cookies.token && loginRes.cookies.token[0] ? `token=${loginRes.cookies.token[0].value}` : '');
+      if (rawCookie) {
+        sessionCookie = rawCookie.split(';')[0];
+      }
     } else {
-      errorRate.add(1);
-      // Jika login gagal (mis. rate limit atau transient), tunggu lalu coba lagi di iterasi berikutnya
+      errorRate.add(1, { stage: stageName });
       randomSleep(2, 4);
       return;
     }
@@ -123,23 +163,27 @@ export default function () {
     randomSleep(1, 4);
   }
 
+  // Header terautentikasi dengan cookie sesi
+  const authHeaders = Object.assign({}, baseHeaders, {
+    Cookie: sessionCookie,
+  });
+
   // -------------------------------------------------------------
   // LANGKAH 2: Buka Daftar Riwayat Laporan (GET /api/riwayat)
   // -------------------------------------------------------------
   const riwayatRes = http.get(`${BASE_URL}/api/riwayat`, {
-    headers: baseHeaders,
-    tags: { action: 'read_riwayat' },
+    headers: authHeaders,
+    tags: { action: 'read_riwayat', stage: stageName },
   });
 
-  readDuration.add(riwayatRes.timings.duration);
+  readDuration.add(riwayatRes.timings.duration, { stage: stageName });
   const riwayatOk = check(riwayatRes, {
     'riwayat status 200': (r) => r.status === 200,
   });
 
   if (!riwayatOk) {
-    errorRate.add(1);
+    errorRate.add(1, { stage: stageName });
     if (riwayatRes.status === 401) {
-      // Sesi kedaluwarsa, paksa login ulang di iterasi berikutnya
       hasLoggedIn = false;
     }
   }
@@ -149,7 +193,6 @@ export default function () {
   try {
     const list = riwayatRes.json();
     if (Array.isArray(list) && list.length > 0) {
-      // Pilih salah satu laporan secara acak dari riwayat miliknya
       const randomIndex = Math.floor(Math.random() * list.length);
       reportId = list[randomIndex].id;
     }
@@ -164,17 +207,17 @@ export default function () {
   // -------------------------------------------------------------
   if (reportId) {
     const detailRes = http.get(`${BASE_URL}/api/riwayat/${reportId}`, {
-      headers: baseHeaders,
-      tags: { action: 'read_detail' },
+      headers: authHeaders,
+      tags: { action: 'read_detail', stage: stageName },
     });
 
-    readDuration.add(detailRes.timings.duration);
+    readDuration.add(detailRes.timings.duration, { stage: stageName });
     const detailOk = check(detailRes, {
       'detail status 200': (r) => r.status === 200,
     });
 
     if (!detailOk) {
-      errorRate.add(1);
+      errorRate.add(1, { stage: stageName });
     }
 
     randomSleep(1, 4);
@@ -197,19 +240,19 @@ export default function () {
     });
 
     const createRes = http.post(`${BASE_URL}/api/laporan`, laporanPayload, {
-      headers: Object.assign({}, baseHeaders, { 'Content-Type': 'application/json' }),
-      tags: { action: 'create_laporan_nlp' },
+      headers: Object.assign({}, authHeaders, { 'Content-Type': 'application/json' }),
+      tags: { action: 'create_laporan_nlp', stage: stageName },
     });
 
-    laporanDuration.add(createRes.timings.duration);
+    laporanDuration.add(createRes.timings.duration, { stage: stageName });
     const createOk = check(createRes, {
       'laporan status 201': (r) => r.status === 201,
     });
 
     if (createOk) {
-      laporanCreatedCounter.add(1);
+      laporanCreatedCounter.add(1, { stage: stageName });
     } else {
-      errorRate.add(1);
+      errorRate.add(1, { stage: stageName });
     }
 
     randomSleep(1, 4);
@@ -234,11 +277,39 @@ function textSummary(data) {
   const reqPerSec = data.metrics.http_reqs ? data.metrics.http_reqs.values.rate.toFixed(2) : '0';
   const laporanCount = data.metrics.laporan_created_count ? data.metrics.laporan_created_count.values.count : 0;
 
+  function getSubMetric(metricName, stage, field) {
+    const key = `${metricName}{stage:${stage}}`;
+    if (data.metrics[key] && data.metrics[key].values && data.metrics[key].values[field] !== undefined) {
+      return data.metrics[key].values[field];
+    }
+    return null;
+  }
+
+  const stagesList = [
+    { name: '5 Pengguna', tag: 'stage_5' },
+    { name: '15 Pengguna', tag: 'stage_15' },
+    { name: '30 Pengguna', tag: 'stage_30' },
+    { name: '50 Pengguna', tag: 'stage_50' },
+  ];
+
+  let stageTable = 'Tahap              | Req Total | Throughput (req/s) | p50 Respons (ms) | p95 Respons (ms) | Error (%)\n';
+  stageTable +=    '-------------------|-----------|--------------------|------------------|------------------|----------\n';
+
+  for (const s of stagesList) {
+    const count = getSubMetric('http_reqs', s.tag, 'count') || 0;
+    const rate = getSubMetric('http_reqs', s.tag, 'rate') || 0;
+    const p50 = getSubMetric('http_req_duration', s.tag, 'med') || 0;
+    const p95 = getSubMetric('http_req_duration', s.tag, 'p(95)') || 0;
+    const err = getSubMetric('http_req_failed', s.tag, 'rate') || 0;
+
+    stageTable += `${s.name.padEnd(18, ' ')} | ${String(count).padStart(9, ' ')} | ${rate.toFixed(2).padStart(18, ' ')} | ${p50.toFixed(2).padStart(16, ' ')} | ${p95.toFixed(2).padStart(16, ' ')} | ${(err * 100).toFixed(2).padStart(8, ' ')}%\n`;
+  }
+
   return `
-======================================================
-  RINGKASAN HASIL PENGUJIAN BEBAN SIPMAS (k6)
-======================================================
-Total HTTP Requests   : ${totalReq}
+========================================================================
+             RINGKASAN HASIL PENGUJIAN BEBAN SIPMAS (k6)
+========================================================================
+Total Permintaan HTTP : ${totalReq}
 Throughput Rata-rata  : ${reqPerSec} req/detik
 Tingkat Error (gagal) : ${errRate}% (Ambang batas: < 1.00%)
 Laporan dibuat (NLP)  : ${laporanCount}
@@ -250,6 +321,10 @@ Waktu Respons Baca (Riwayat & Detail):
 Waktu Respons Kirim Laporan (NLP Service):
  - Rata-rata : ${laporanAvg} ms
  - p95       : ${laporanP95} ms (Ambang batas: < 3000 ms)
-======================================================
+
+Rincian Metrik per Tahap Beban:
+${stageTable}
+========================================================================
 `;
 }
+
