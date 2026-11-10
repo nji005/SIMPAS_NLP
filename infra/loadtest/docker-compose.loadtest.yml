@@ -1,0 +1,25 @@
+# infra/loadtest/docker-compose.loadtest.yml
+# Compose override untuk simulasi spesifikasi VPS RAM 2 GB dan 1-2 vCPU.
+# Penggunaan:
+#   docker compose -f docker-compose.yml -f infra/loadtest/docker-compose.loadtest.yml up -d
+# Catatan: docker-compose.yml utama TIDAK diubah sama sekali.
+
+services:
+  mysql:
+    cpus: "0.75"
+    mem_limit: 512m
+
+  nlp-service:
+    cpus: "0.50"
+    mem_limit: 300m
+
+  backend:
+    cpus: "0.75"
+    mem_limit: 512m
+    environment:
+      # Mengaktifkan pembacaan header X-Forwarded-For dari k6 agar tiap VU disimulasikan sebagai IP unik
+      TRUST_PROXY: "1"
+
+  frontend:
+    cpus: "0.50"
+    mem_limit: 256m
