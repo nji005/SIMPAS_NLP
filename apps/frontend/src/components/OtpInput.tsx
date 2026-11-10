@@ -43,10 +43,13 @@ export default function OtpInput({
     const clean = raw.replace(/\D/g, "");
 
     if (!clean) {
-      // Input kosong atau non-digit
-      const chars = value.split("");
-      chars[index] = "";
-      onChange(chars.join(""));
+      // Hanya hapus digit bila kotak benar-benar dikosongkan (mis. cut).
+      // Huruf atau simbol diabaikan, digit yang ada tidak ikut hilang.
+      if (raw === "") {
+        const chars = value.split("");
+        chars[index] = "";
+        onChange(chars.join(""));
+      }
       return;
     }
 
@@ -152,7 +155,7 @@ export default function OtpInput({
     <div
       role="group"
       aria-label="Kode OTP 6 Digit"
-      className="flex items-center justify-center gap-2 sm:gap-3 my-2"
+      className="flex items-center justify-center gap-1.5 sm:gap-3 my-2"
     >
       {Array.from({ length }).map((_, index) => {
         const digit = digits[index] || "";
