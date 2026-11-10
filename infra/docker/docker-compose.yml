@@ -9,6 +9,11 @@ services:
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
       MYSQL_DATABASE: db_sipmas
+    command:
+      - --innodb-buffer-pool-size=128M
+      - --performance-schema=OFF
+      - --max-connections=50
+      - --innodb-log-buffer-size=8M
     ports:
       - "127.0.0.1:${MYSQL_PORT:-3307}:3306"
     volumes:

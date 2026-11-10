@@ -10,6 +10,11 @@ services:
       MYSQL_DATABASE: db_sipmas
       MYSQL_USER: sipmas_app
       MYSQL_PASSWORD: "${DB_APP_PASSWORD:?DB_APP_PASSWORD wajib diisi}"
+    command:
+      - --innodb-buffer-pool-size=128M
+      - --performance-schema=OFF
+      - --max-connections=50
+      - --innodb-log-buffer-size=8M
     volumes:
       - prod_mysql_data:/var/lib/mysql
     healthcheck:
