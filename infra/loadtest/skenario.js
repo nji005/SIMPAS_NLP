@@ -80,6 +80,19 @@ export const options = {
     // tingkat error total < 1 persen
     http_req_failed: ['rate<0.01'],
     custom_error_rate: ['rate<0.01'],
+    // Deklarasi sub-metrik per stage agar tercatat di summary.json
+    'http_req_duration{stage:stage_5}': [],
+    'http_req_duration{stage:stage_15}': [],
+    'http_req_duration{stage:stage_30}': [],
+    'http_req_duration{stage:stage_50}': [],
+    'http_reqs{stage:stage_5}': [],
+    'http_reqs{stage:stage_15}': [],
+    'http_reqs{stage:stage_30}': [],
+    'http_reqs{stage:stage_50}': [],
+    'http_req_failed{stage:stage_5}': [],
+    'http_req_failed{stage:stage_15}': [],
+    'http_req_failed{stage:stage_30}': [],
+    'http_req_failed{stage:stage_50}': [],
   },
 };
 

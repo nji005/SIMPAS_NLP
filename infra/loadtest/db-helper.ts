@@ -18,9 +18,9 @@ export function getSafeDatabaseUrl(): string {
     process.exit(1);
   }
 
-  let dbUrl = process.env.DATABASE_URL;
+  let dbUrl = process.env.LOADTEST_DATABASE_URL || process.env.DATABASE_URL;
 
-  // Bila DATABASE_URL belum ada di environment, gunakan default lokal
+  // Bila DATABASE_URL belum ada di environment, gunakan default lokal (port 3307 kontainer sipmas-mysql)
   if (!dbUrl) {
     dbUrl = 'mysql://root:@127.0.0.1:3307/db_sipmas';
   }

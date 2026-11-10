@@ -28,7 +28,7 @@ async function cleanupLoadtest() {
     }
 
     // 2. Cari semua akun uji beban dengan pola email loadtest-*@example.test
-    const testUsers = await prisma.user.findMany({
+    let testUsers = await prisma.user.findMany({
       where: {
         email: {
           startsWith: 'loadtest-',
@@ -37,6 +37,34 @@ async function cleanupLoadtest() {
       },
       select: { id: true, email: true },
     });
+
+    // Bila tidak ditemukan di port 3306, periksa port 3307 (kontainer sipmas-mysql)
+    if (testUsers.length === 0 && dbUrl.includes(':3306/')) {
+      const fallbackUrl = dbUrl.replace(':3306/', ':3307/');
+      try {
+        const fallbackPrisma = createSafePrismaClient(fallbackUrl);
+        await fallbackPrisma.$connect();
+        const fallbackUsers = await fallbackPrisma.user.findMany({
+          where: {
+            email: {
+              startsWith: 'loadtest-',
+              endsWith: '@example.test',
+            },
+          },
+          select: { id: true, email: true },
+        });
+        if (fallbackUsers.length > 0) {
+          console.log('Ditemukan akun uji pada port 3307 (kontainer sipmas-mysql), beralih ke port 3307...');
+          await prisma.$disconnect();
+          prisma = fallbackPrisma;
+          testUsers = fallbackUsers;
+        } else {
+          await fallbackPrisma.$disconnect();
+        }
+      } catch {
+        // Abaikan jika port 3307 tidak aktif
+      }
+    }
 
     if (testUsers.length === 0) {
       console.log('ℹ️ Tidak ditemukan akun uji loadtest-*@example.test di database db_sipmas.');
