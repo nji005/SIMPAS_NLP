@@ -456,3 +456,50 @@ Workflow CI dijalankan secara otomatis melalui GitHub Actions (`.github/workflow
 3. **`docker-build-check`**:
    - Memvalidasi bahwa seluruh container Docker (`frontend`, `backend`, dan `nlp-service`) berhasil dibuild melalui `docker compose build`.
 
+---
+
+## 📊 Pengujian Beban (Load Testing) dengan k6
+
+Tersedia perangkat pengujian beban (*load test*) otomatis berbasis **Grafana k6** di folder `infra/loadtest/` untuk menguji kapasitas throughput, waktu respons, dan pemakaian RAM kontainer pada simulasi spesifikasi VPS RAM 2 GB (tahapan beban 5, 15, 30, hingga 50 pengguna bersamaan).
+
+> ⚠️ **PERINGATAN KERAS — JANGAN ARAHKAN KE PRODUKSI:**
+> Skrip uji beban ini **HANYA** boleh dijalankan terhadap aplikasi lokal (`localhost`, `127.0.0.1`, atau `host.docker.internal`) dan **HANYA** pada database `db_sipmas`. Skrip dilengkapi pengaman internal yang akan langsung berhenti (*fail-fast*) bila `NODE_ENV=production`, bila target database bukan `db_sipmas`, atau bila `BASE_URL` mengarah ke domain luar. DILARANG KERAS mengarahkan pengujian ini ke server atau basis data produksi!
+
+### 1. Menjalankan Kontainer dengan Batasan Spesifikasi 2 GB VPS
+Gunakan berkas *override* `docker-compose.loadtest.yml` untuk membatasi CPU (1–2 core) dan memori (~1,5 GB total kontainer):
+```bash
+docker compose -f docker-compose.yml -f infra/loadtest/docker-compose.loadtest.yml up -d
+```
+
+### 2. Inisialisasi Akun Uji Beban (Seed Data)
+Buat 60 akun warga uji (`loadtest-1@example.test` s/d `loadtest-60@example.test`) dengan status terverifikasi (`isVerified=true`) dan hash password bcrypt:
+```bash
+# Di PowerShell / Bash:
+LOADTEST_PASSWORD="SandiUjiBeban123!" pnpm loadtest:seed
+```
+> *Catatan Keamanan:* Kata sandi dibaca secara dinamis dari variabel lingkungan `LOADTEST_PASSWORD` dan tidak pernah ditulis di dalam kode maupun dicetak ke log.
+
+### 3. Menjalankan Pencatat Penggunaan Memori (Opsional)
+Buka terminal baru untuk mencatat konsumsi RAM dan CPU kontainer tiap 5 detik ke format CSV (`infra/loadtest/memory-stats.csv`):
+```bash
+node infra/loadtest/record-memory.js
+```
+
+### 4. Menjalankan Skenario Uji Beban k6 via Docker
+Jalankan skrip k6 tanpa perlu menginstall k6 secara lokal (otomatis mengunduh image resmi `grafana/k6`):
+```bash
+# Menjalankan skenario standar (tahapan 5, 15, 30, 50 pengguna @ 2 menit per tahap):
+docker run --rm -i -v "${PWD}/infra/loadtest:/scripts" -e BASE_URL=http://host.docker.internal:5001 -e LOADTEST_PASSWORD="SandiUjiBeban123!" grafana/k6 run /scripts/skenario.js
+
+# Untuk pengujian cepat (misal durasi 15 detik per tahap):
+docker run --rm -i -v "${PWD}/infra/loadtest:/scripts" -e BASE_URL=http://host.docker.internal:5001 -e LOADTEST_PASSWORD="SandiUjiBeban123!" -e STAGE_DURATION=15s grafana/k6 run /scripts/skenario.js
+```
+
+### 5. Membersihkan Seluruh Data Uji Beban (Cleanup)
+Setelah pengujian selesai, bersihkan seluruh akun uji, laporan terkait, dan berkas foto yang terbentuk:
+```bash
+pnpm loadtest:cleanup
+```
+Skrip akan menghapus seluruh entitas `loadtest-*@example.test` dari `db_sipmas`, membersihkan foto di `apps/backend/public/uploads`, dan memastikan sisa akun adalah 0.
+
+
