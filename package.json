@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "lint": "turbo lint"
+    "lint": "turbo lint",
+    "loadtest:seed": "pnpm --filter backend exec tsx ../../infra/loadtest/seed-loadtest-users.ts",
+    "loadtest:cleanup": "pnpm --filter backend exec tsx ../../infra/loadtest/cleanup-loadtest.ts"
   },
   "devDependencies": {
     "turbo": "^2.4.4"
