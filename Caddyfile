@@ -1,0 +1,26 @@
+{
+	auto_https off
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	handle /api/health {
+		rewrite * /health
+		reverse_proxy backend:5001
+	}
+
+	handle /api/* {
+		reverse_proxy backend:5001
+	}
+
+	handle /uploads/* {
+		reverse_proxy backend:5001
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
+

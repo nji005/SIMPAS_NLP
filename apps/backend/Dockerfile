@@ -15,9 +15,10 @@ COPY apps/backend/ ./apps/backend/
 # Install dependencies with workspace filter and frozen lockfile
 RUN pnpm install --frozen-lockfile --filter backend...
 
-# Generate Prisma Client and build TypeScript
+# Generate Prisma Client and build TypeScript (including production seed script)
 RUN DATABASE_URL="mysql://build:build@localhost:3306/build" pnpm --filter backend exec prisma generate
 RUN pnpm --filter backend run build
+RUN pnpm --filter backend exec tsc prisma/seed.ts --outDir dist-seed --target ES2022 --module CommonJS --moduleResolution node --esModuleInterop --skipLibCheck
 
 # Deploy isolated production dependencies and generate production Prisma Client
 RUN pnpm --filter backend --prod deploy /app/deployed
@@ -40,6 +41,7 @@ COPY --from=builder --chown=node:node /app/deployed/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/deployed/package.json ./package.json
 COPY --from=builder --chown=node:node /app/apps/backend/dist ./dist
 COPY --from=builder --chown=node:node /app/apps/backend/prisma ./prisma
+COPY --from=builder --chown=node:node /app/apps/backend/dist-seed/seed.js ./prisma/seed.js
 
 # Create public/uploads directory owned by node user
 RUN mkdir -p public/uploads && chown -R node:node /app

@@ -266,31 +266,31 @@ Tersedia script otomatisasi untuk backup dan restore database `db_sipmas` secara
 
 #### 1. Backup Database (`backup-db.sh`)
 ```bash
-# Backup standar (plaintext SQL):
+# Backup standar terkompresi (.sql.gz):
 bash infra/scripts/backup-db.sh
 
 # Backup terenkripsi GPG (AES256):
 BACKUP_GPG_PASSPHRASE="passphrase_rahasia_anda" bash infra/scripts/backup-db.sh
 ```
-- **Kredensial:** Otomatis membaca konfigurasi dari `DATABASE_URL` pada file `.env` atau `apps/backend/.env`.
-- **Lokasi Output:** Disimpan di direktori `backups/db_sipmas_YYYYMMDD_HHMMSS.sql` (atau `.sql.gpg` jika terenkripsi). Folder `backups/` diabaikan oleh Git (`.gitignore`).
-- **Retensi Otomatis:** Script otomatis menghapus file backup lama di folder `backups/` yang melebihi batas waktu (default: 14 hari). Anda dapat mengatur durasi melalui variabel `BACKUP_RETENTION_DAYS` (misal: `BACKUP_RETENTION_DAYS=30`).
-- **Enkripsi GPG:** Bila `BACKUP_GPG_PASSPHRASE` diset, file langsung dienkripsi simetris dengan cipher AES256 melalui stdin dan file plaintext segera dihapus.
+- **Kontainer & Kredensial:** Otomatis mendeteksi kontainer aktif (`sipmas-prod-mysql` di produksi atau `sipmas-mysql` di dev) lewat `docker exec`, atau fallback ke `mysqldump` lokal. Kata sandi dibaca dari `.env` melalui variabel lingkungan `MYSQL_PWD` tanpa dicetak.
+- **Lokasi Output:** Disimpan di direktori `backups/db_sipmas_YYYYMMDD_HHMMSS.sql.gz` (atau `.sql.gz.gpg` jika terenkripsi). Folder `backups/` diabaikan oleh Git (`.gitignore`).
+- **Retensi Otomatis:** Script otomatis menghapus file backup lama di folder `backups/` yang melebihi batas waktu (default: **7 hari**). Anda dapat mengatur durasi melalui variabel `BACKUP_RETENTION_DAYS` (misal: `BACKUP_RETENTION_DAYS=30`).
+- **Enkripsi GPG:** Bila `BACKUP_GPG_PASSPHRASE` diset, file langsung dienkripsi simetris dengan cipher AES256 melalui stdin dan file tidak terenkripsi segera dihapus.
 
 #### 2. Restore Database (`restore-db.sh`)
 ```bash
 # Uji coba restore ke database pengujian (sangat disarankan):
-bash infra/scripts/restore-db.sh backups/db_sipmas_20261015_120000.sql db_sipmas_restore_test
+bash infra/scripts/restore-db.sh backups/db_sipmas_20261015_120000.sql.gz db_sipmas_restore_test
 
 # Restore file terenkripsi GPG:
-BACKUP_GPG_PASSPHRASE="passphrase_rahasia_anda" bash infra/scripts/restore-db.sh backups/db_sipmas_20261015_120000.sql.gpg db_sipmas_restore_test
+BACKUP_GPG_PASSPHRASE="passphrase_rahasia_anda" bash infra/scripts/restore-db.sh backups/db_sipmas_20261015_120000.sql.gz.gpg db_sipmas_restore_test
 
 # Restore ke database utama (memerlukan konfirmasi eksplisit):
-bash infra/scripts/restore-db.sh backups/db_sipmas_20261015_120000.sql db_sipmas --yes-overwrite-sipmas
+bash infra/scripts/restore-db.sh backups/db_sipmas_20261015_120000.sql.gz db_sipmas --yes-overwrite-sipmas
 ```
 - **Proteksi Mutlak:** Target `db_pengaduan` DITOLAK KERAS oleh sistem.
 - **Proteksi Produksi:** Target `db_sipmas` ditolak kecuali jika flag `--yes-overwrite-sipmas` disertakan.
-- **Auto-Decryption:** Mendukung dekripsi file `.gpg` secara otomatis bila passphrase tersedia di environment.
+- **Auto-Decryption & Gzip:** Mendukung dekripsi `.gpg` dan dekompresi `.sql.gz` secara otomatis.
 
 #### 3. Backup Berkas Uploads Foto (`backup-uploads.sh`)
 ```bash
@@ -312,16 +312,16 @@ BACKUP_GPG_PASSPHRASE="passphrase_rahasia_anda" bash infra/scripts/backup-upload
 
 ## 🚀 Panduan Deploy Produksi
 
-Untuk implementasi di server produksi menggunakan `docker-compose.prod.yml`:
+Konfigurasi deploy produksi berada di root repositori ([`docker-compose.prod.yml`](docker-compose.prod.yml), [`Caddyfile`](Caddyfile), dan [`.env.production.example`](.env.production.example)). Lihat panduan lengkap langkah demi langkah di **[`docs/DEPLOY.md`](docs/DEPLOY.md)**.
 
-### 1. Reverse Proxy TLS & Port Protection
-- **Arsitektur:** Pasang reverse proxy di host (seperti **Caddy** atau **Nginx**) dengan sertifikat TLS/SSL (HTTPS).
-- **Proteksi Port:** **JANGAN MEMBUKA** port backend (`5001`) atau port database (`3306`) langsung ke internet publik. Hanya reverse proxy yang membuka port `80` (HTTP redirect) dan `443` (HTTPS) ke publik.
-- **Trust Proxy:** Pastikan variabel lingkungan `TRUST_PROXY=1` diset di backend agar rate limiter dan header `X-Forwarded-For` membaca IP asli pengunjung dengan benar.
+### 1. Reverse Proxy Internal, Cloudflare Tunnel & Proteksi Port
+- **Arsitektur:** `Caddy` melayani HTTP internal pada `:80` (`auto_https off`) dalam satu origin (`/` -> `frontend:3000`, `/api/*` dan `/uploads/*` -> `backend:5001`), lalu terekspos ke domain `sipmas.my.id` lewat kontainer `cloudflared` (HTTPS ditangani oleh Cloudflare).
+- **Proteksi Port:** Tidak ada port host yang dipublikasikan di `docker-compose.prod.yml` agar aman dari benturan Traefik/layanan host lain dan tidak mengekspos `5001` atau `3306`.
+- **Trust Proxy:** Backend diatur dengan `TRUST_PROXY=2` (melewati hop `Caddy` dan `cloudflared`) agar `req.ip` dan rate limiter membaca IP asli pengunjung.
 
 ### 2. Akun MySQL Khusus Aplikasi (Non-Root)
-Pada environment produksi (`docker-compose.prod.yml`), backend terhubung menggunakan user non-root `sipmas_app`:
-- Konfigurasikan variabel wajib `DB_APP_PASSWORD` dengan kata sandi yang kuat di environment server.
+Pada environment produksi ([`docker-compose.prod.yml`](docker-compose.prod.yml)), backend terhubung menggunakan user non-root `sipmas_app`:
+- Konfigurasikan variabel wajib `DB_PASSWORD` (root) dan `DB_APP_PASSWORD` (user `sipmas_app`) dengan kata sandi yang kuat di berkas `.env` server.
 - Variabel `SMTP_HOST` wajib ditentukan secara eksplisit di environment produksi karena service MailHog tidak dijalankan di produksi.
 
 > ⚠️ **Catatan Penting untuk Volume Database Produksi yang Sudah Ada:**
@@ -444,7 +444,7 @@ Endpoint HTTP `POST /train` telah dihapus sepenuhnya dari aplikasi demi keamanan
 
 ## 🔄 Integrasi Berkelanjutan (CI / Continuous Integration)
 
-Workflow CI dijalankan secara otomatis melalui GitHub Actions (`.github/workflows/ci.yml`) pada setiap *push* dan *pull request* ke branch `main`. Workflow ini mencakup tiga job:
+Workflow CI dijalankan secara otomatis melalui GitHub Actions (`.github/workflows/ci.yml`) pada setiap *push* dan *pull request* ke branch `main`/`master`. Workflow ini mencakup empat job:
 
 1. **`monorepo-lint-and-build`**:
    - Memeriksa kepatuhan linting kode di seluruh monorepo (`pnpm lint`).
@@ -452,9 +452,11 @@ Workflow CI dijalankan secara otomatis melalui GitHub Actions (`.github/workflow
    - Menjalankan seluruh test suite backend (`pnpm --filter backend test`).
    - **Catatan Konfigurasi:** Diberikan environment variable dummy `DATABASE_URL: "mysql://build:build@localhost:3306/build"` pada level job dan menjalankan `pnpm --filter backend exec prisma generate` sebelum tahap build/test, sehingga Prisma Client terinisialisasi secara mandiri tanpa memerlukan koneksi MySQL aktif selama runner CI berlangsung.
 2. **`nlp-service-ci`**:
-   - Memeriksa dan mengeksekusi test suite layanan NLP Python (`pytest`) pada environment Python 3.11.
+   - Memeriksa dan mengeksekusi test suite layanan NLP Python (`pytest`) pada environment Python 3.12.
 3. **`docker-build-check`**:
-   - Memvalidasi bahwa seluruh container Docker (`frontend`, `backend`, dan `nlp-service`) berhasil dibuild melalui `docker compose build`.
+   - Memvalidasi bahwa seluruh container Docker (`frontend`, `backend`, dan `nlp-service`) berhasil dibuild (tanpa push).
+4. **`publish-ghcr-images`** *(khusus `push` ke branch default)*:
+   - Membangun dan mengirim image `linux/amd64` untuk `nlp`, `backend`, dan `frontend` ke **GHCR** (`latest` dan commit SHA) setelah lint, build, dan test lulus.
 
 ---
 

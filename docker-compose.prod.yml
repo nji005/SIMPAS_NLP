@@ -1,0 +1,169 @@
+# docker-compose.prod.yml
+# Konfigurasi produksi SIPMAS untuk satu VPS kecil (tanpa build di server, memakai image GHCR)
+# Tidak mempublikasikan port ke host; akses eksternal masuk melalui Cloudflare Tunnel -> Caddy (:80).
+
+name: sipmas-prod
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: sipmas-prod-mysql
+    mem_limit: 256m
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD wajib diisi}"
+      MYSQL_DATABASE: db_sipmas
+      MYSQL_USER: sipmas_app
+      MYSQL_PASSWORD: "${DB_APP_PASSWORD:?DB_APP_PASSWORD wajib diisi}"
+    command:
+      - --innodb-buffer-pool-size=128M
+      - --performance-schema=OFF
+      - --max-connections=50
+      - --innodb-log-buffer-size=8M
+    volumes:
+      - prod_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping --protocol=tcp -h 127.0.0.1 --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 25s
+    networks:
+      - sipmas-prod-net
+
+  nlp:
+    image: ghcr.io/${GHCR_OWNER:-nji005}/simpas_nlp-nlp:${IMAGE_TAG:-latest}
+    container_name: sipmas-prod-nlp
+    mem_limit: 160m
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+      OMP_NUM_THREADS: 1
+      OPENBLAS_NUM_THREADS: 1
+      MKL_NUM_THREADS: 1
+      NLP_MIN_CONFIDENCE: "${NLP_MIN_CONFIDENCE:-0.5}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - sipmas-prod-net
+
+  backend:
+    image: ghcr.io/${GHCR_OWNER:-nji005}/simpas_nlp-backend:${IMAGE_TAG:-latest}
+    container_name: sipmas-prod-backend
+    mem_limit: 256m
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5001
+      NODE_OPTIONS: "--max-old-space-size=192"
+      DATABASE_URL: "mysql://sipmas_app:${DB_APP_PASSWORD:?DB_APP_PASSWORD wajib diisi}@mysql:3306/db_sipmas"
+      NLP_SERVICE_URL: "http://nlp:5000"
+      SMTP_HOST: "${SMTP_HOST:?SMTP_HOST wajib diisi}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET wajib diisi}"
+      FRONTEND_URL: "${FRONTEND_URL:-https://sipmas.my.id}"
+      # Dua hop di belakang proxy internal Docker: Caddy -> cloudflared -> backend
+      TRUST_PROXY: "${TRUST_PROXY:-2}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL:-admin@sipmas.my.id}"
+      ADMIN_NIK: "${ADMIN_NIK:-0000000000000001}"
+      ADMIN_NAMA: "${ADMIN_NAMA:-Administrator SIPMAS}"
+    command: sh -c "./node_modules/.bin/prisma migrate deploy && node dist/server.js"
+    volumes:
+      - prod_backend_uploads:/app/public/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nlp:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    networks:
+      - sipmas-prod-net
+
+  frontend:
+    image: ghcr.io/${GHCR_OWNER:-nji005}/simpas_nlp-frontend:${IMAGE_TAG:-latest}
+    container_name: sipmas-prod-frontend
+    mem_limit: 128m
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: ""
+      INTERNAL_API_URL: "http://backend:5001"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - sipmas-prod-net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: sipmas-prod-caddy
+    mem_limit: 64m
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    networks:
+      - sipmas-prod-net
+
+  cloudflared-quick:
+    image: cloudflare/cloudflared:2026.10.3
+    container_name: sipmas-prod-cloudflared-quick
+    profiles: ["tunnel-quick"]
+    mem_limit: 96m
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://caddy:80
+    depends_on:
+      caddy:
+        condition: service_started
+    networks:
+      - sipmas-prod-net
+
+  cloudflared-named:
+    image: cloudflare/cloudflared:2026.10.3
+    container_name: sipmas-prod-cloudflared-named
+    profiles: ["tunnel-named"]
+    mem_limit: 96m
+    restart: unless-stopped
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
+    command: tunnel --no-autoupdate run
+    depends_on:
+      caddy:
+        condition: service_started
+    networks:
+      - sipmas-prod-net
+
+volumes:
+  prod_mysql_data:
+    name: prod_mysql_data
+  prod_backend_uploads:
+    name: prod_backend_uploads
+
+networks:
+  sipmas-prod-net:
+    name: sipmas-prod-net
+    driver: bridge
+

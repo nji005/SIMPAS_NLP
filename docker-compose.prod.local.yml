@@ -1,0 +1,20 @@
+# docker-compose.prod.local.yml
+# Override untuk uji coba stack produksi secara lokal di laptop (tanpa Cloudflare Tunnel).
+# Hanya mempublikasikan Caddy ke 127.0.0.1:8088 dan menyesuaikan FRONTEND_URL untuk CORS lokal.
+# Jalankan: docker compose -f docker-compose.prod.yml -f docker-compose.prod.local.yml up -d
+services:
+  nlp:
+    pull_policy: missing
+
+  backend:
+    pull_policy: missing
+    environment:
+      FRONTEND_URL: "http://127.0.0.1:8088"
+
+  frontend:
+    pull_policy: missing
+
+  caddy:
+    ports:
+      - "127.0.0.1:8088:80"
+
